@@ -1,19 +1,24 @@
 name: "Feature request"
-description: "Suggest a new feature for Termux application"
+description: "Suggest an idea for the project"
 title: "[Feature]: "
-labels: ["feature request"]
+labels: ["enhancement"]
 body:
   - type: textarea
     attributes:
-      label: Feature description
-      description: Describe the feature and why you want it.
+      label: What problem does this solve?
+      description: Describe the problem you're facing, not just a solution.
     validations:
       required: true
   - type: textarea
     attributes:
-      label: Additional information
-      description: |
-        Does another app/terminal emulator have this feature?
-        Provide links to more background information.
-    validations:
-      required: true
+      label: Proposed solution
+      description: How could the app address this?
+  - type: textarea
+    attributes:
+      label: Alternatives you've considered
+  - type: checkboxes
+    attributes:
+      label: Provider-related?
+      options:
+        - label: "This is about a new/improved provider — could it be a plugin instead of a core change?"
+          required: false

@@ -127,6 +127,10 @@ Installing a newer APK over an existing installation (`adb install -r` or side-l
 
 See [`instructions.md`](instructions.md) — it covers architecture, building, ADB debugging, asset deployment, the torrent engine, provider system, key files, and development workflow.
 
+### Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for ground rules and guidelines, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for expectations around interaction.
+
 ---
 
 ## Disclaimer
