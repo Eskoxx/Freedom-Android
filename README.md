@@ -1,6 +1,6 @@
 # Freedom
 
-Freedom turns your Android device into a portable media streamer. Open the app, and a text-based interface lets you search across multiple providers, stream or download content, and play it back with hardware-accelerated video — all without leaving the terminal.
+**Freedom** is an **anime and movie streaming** app for **Android** (arm64). Search across multiple providers, **stream** or **download** content, and play it back with a built-in hardware-accelerated **MPV** player — all from a terminal TUI with torrent streaming and plugin-based providers.
 
 This is the **Android** build. The cross-platform terminal version lives in the [Freedom](https://github.com/Eskoxx/Freedom) repo.
 
@@ -27,6 +27,8 @@ This is the **Android** build. The cross-platform terminal version lives in the 
 - **Plugin system** — write and load custom provider plugins without modifying the app
 
 ### Getting Started
+
+> If you find this useful, please **star the repo** ⭐ — it helps others discover it.
 
 1. **Download the APK** — grab the latest **arm64** release from the [Releases page](https://github.com/Eskoxx/Freedom-Android/releases/latest) (or build from source — see [`instructions.md`](instructions.md)). **Note:** the APK is built **only for arm64** (arm64-v8a) devices — it will not install on 32-bit or x86 devices.
 2. **Install** the APK on your Android device (Android 7+ required, Android 12+ recommended with phantom process limits disabled — see [Termux docs](https://github.com/termux/termux-app/issues/2366)).
