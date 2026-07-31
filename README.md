@@ -4,6 +4,8 @@
 
 This is the **Android** build. The cross-platform terminal version lives in the [Freedom](https://github.com/Eskoxx/Freedom) repo.
 
+![Freedom Android](freedom-android.png)
+
 ## Contents
 
 - [For Users](#for-users)
