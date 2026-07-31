@@ -2,6 +2,8 @@
 
 Freedom turns your Android device into a portable media streamer. Open the app, and a text-based interface lets you search across multiple providers, stream or download content, and play it back with hardware-accelerated video — all without leaving the terminal.
 
+This is the **Android** build. The cross-platform terminal version lives in the [Freedom](https://github.com/Eskoxx/Freedom) repo.
+
 ## Contents
 
 - [For Users](#for-users)
