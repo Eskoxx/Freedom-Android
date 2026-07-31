@@ -30,8 +30,11 @@ This is the **Android** build. The cross-platform terminal version lives in the 
 
 1. **Download the APK** — grab the latest **arm64** release from the [Releases page](https://github.com/Eskoxx/Freedom-Android/releases/latest) (or build from source — see [`instructions.md`](instructions.md)). **Note:** the APK is built **only for arm64** (arm64-v8a) devices — it will not install on 32-bit or x86 devices.
 2. **Install** the APK on your Android device (Android 7+ required, Android 12+ recommended with phantom process limits disabled — see [Termux docs](https://github.com/termux/termux-app/issues/2366)).
-3. **Open** the app. On first launch, the bootstrap installer runs automatically (~30–60 seconds). It installs Python 3.14, Node.js 26, mpv, and all dependencies, then **auto-launches the TUI**.
-4. The TUI always starts automatically when you open the app (if it's installed).
+3. **Open** the app. On first launch, the bootstrap installer runs automatically — **be patient and wait up to 2 minutes** so all bootstrap packages (Python 3.14, Node.js 26, mpv, and all dependencies) get installed. The TUI then **loads automatically**.
+4. **Grant permissions** when prompted:
+   - **Overlay permission** — required for the MPV video player (enable "Display over other apps").
+   - **Notification permission** — required for playback/download notifications.
+5. The TUI always starts automatically when you open the app (if it's installed).
 
 The TUI (Textual User Interface) is keyboard-driven across several screens:
 
