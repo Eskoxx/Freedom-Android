@@ -82,13 +82,17 @@ def fetch_remote_version(timeout: float = 5.0) -> str:
 
 def _fetch_manifest(timeout: float = 10.0) -> dict[str, str]:
     body = _http_get(_raw_url(".update-manifest"), timeout).decode("utf-8", "replace")
+    prefix = _asset_prefix() + "/"
     manifest = {}
     for line in body.splitlines():
         line = line.strip()
         if not line or "  " not in line:
             continue
         digest, rel = line.split("  ", 1)
-        manifest[rel.strip()] = digest.strip()
+        rel = rel.strip()
+        if rel.startswith(prefix):
+            rel = rel[len(prefix):]
+        manifest[rel] = digest.strip()
     return manifest
 
 
