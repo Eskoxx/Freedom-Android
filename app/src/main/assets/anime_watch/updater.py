@@ -1,9 +1,6 @@
-import io
+import hashlib
 import os
 import re
-import shutil
-import tarfile
-import tempfile
 import threading
 import urllib.request
 
@@ -35,12 +32,14 @@ def _asset_prefix() -> str:
     return "anime_watch"
 
 
-def _tarball_url() -> str:
-    return f"https://codeload.github.com/{_repo()}/tar.gz/refs/heads/main"
-
-
 def _raw_url(path: str) -> str:
     return f"https://raw.githubusercontent.com/{_repo()}/main/{_asset_prefix()}/{path}"
+
+
+def _http_get(url: str, timeout: float) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
 
 
 def _parse_version(text: str) -> int:
@@ -66,70 +65,76 @@ def _write_local_version(remote_text: str) -> None:
         pass
 
 
-def fetch_remote_version(timeout: float = 5.0) -> str:
-    req = urllib.request.Request(_raw_url(".update-version"), headers={"User-Agent": _UA})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read().decode("utf-8", "replace")
-
-
-def _download_tarball(timeout: float = 60.0) -> bytes:
-    req = urllib.request.Request(_tarball_url(), headers={"User-Agent": _UA})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
-
-
-def _strip_top_dir(tarinfo) -> tarfile.TarInfo:
-    parts = tarinfo.name.split("/", 1)
-    if len(parts) == 2:
-        tarinfo.name = parts[1]
-    return tarinfo
-
-
-def _apply_tarball(data: bytes) -> int:
-    pkg = _pkg_dir()
-    prefix = _asset_prefix()
-    tmp = tempfile.mkdtemp(prefix="freedom-update-")
+def _sha256_file(path: str) -> str:
+    h = hashlib.sha256()
     try:
-        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
-            for member in tf.getmembers():
-                rel = _strip_top_dir(member).name
-                if rel == "" or not rel.startswith(prefix + "/"):
-                    continue
-                dest_rel = rel[len(prefix) + 1:]
-                dest = os.path.join(tmp, dest_rel)
-                if member.isdir():
-                    os.makedirs(dest, exist_ok=True)
-                    continue
-                if not member.isfile():
-                    continue
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                src = tf.extractfile(member)
-                if src is None:
-                    continue
-                with open(dest, "wb") as out:
-                    shutil.copyfileobj(src, out)
-        count = 0
-        for root, _dirs, files in os.walk(tmp):
-            for fname in files:
-                if fname.endswith((".pyc", ".pyo")) or "__pycache__" in root:
-                    continue
-                src = os.path.join(root, fname)
-                rel = os.path.relpath(src, tmp)
-                dest = os.path.join(pkg, rel)
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                shutil.copy2(src, dest)
-                count += 1
-        return count
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
+def fetch_remote_version(timeout: float = 5.0) -> str:
+    return _http_get(_raw_url(".update-version"), timeout).decode("utf-8", "replace")
+
+
+def _fetch_manifest(timeout: float = 10.0) -> dict[str, str]:
+    body = _http_get(_raw_url(".update-manifest"), timeout).decode("utf-8", "replace")
+    manifest = {}
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or "  " not in line:
+            continue
+        digest, rel = line.split("  ", 1)
+        manifest[rel.strip()] = digest.strip()
+    return manifest
+
+
+def _apply_manifest(manifest: dict[str, str]) -> int:
+    pkg = _pkg_dir()
+    changed = 0
+    for rel, digest in manifest.items():
+        dest = os.path.join(pkg, rel)
+        if os.path.isfile(dest) and _sha256_file(dest) == digest:
+            continue
+        try:
+            data = _http_get(_raw_url(rel), timeout=30)
+        except Exception:
+            continue
+        if hashlib.sha256(data).hexdigest() != digest:
+            continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        tmp = dest + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, dest)
+        changed += 1
+
+    keep = set(manifest.keys()) | {".update-version", ".update-pending", ".update-manifest"}
+    for root, _dirs, files in os.walk(pkg):
+        if "__pycache__" in root:
+            continue
+        for fname in files:
+            full = os.path.join(root, fname)
+            rel = os.path.relpath(full, pkg)
+            if rel in keep:
+                continue
+            try:
+                os.unlink(full)
+            except OSError:
+                pass
+    return changed
 
 
 def _apply_update_async(remote_text: str) -> None:
     def run():
         try:
-            data = _download_tarball()
-            count = _apply_tarball(data)
-            if count > 0:
+            manifest = _fetch_manifest()
+            if not manifest:
+                return
+            if _apply_manifest(manifest) > 0:
                 _write_local_version(remote_text)
                 notice = os.path.join(_pkg_dir(), ".update-pending")
                 try:
