@@ -140,6 +140,12 @@ android {
         }
     }
 
+    aaptOptions {
+        // Keep dotfiles (.update-version, .update-manifest) in assets for
+        // the self-updater; default pattern ".*" strips them.
+        ignoreAssetsPattern "!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~"
+    }
+
     applicationVariants.all { variant ->
         def buildType = variant.buildType.name
         variant.outputs.all { output ->
