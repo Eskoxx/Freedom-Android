@@ -5,6 +5,8 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "plugin":
         from anime_watch.plugin.cli import run_plugin_cli
         return run_plugin_cli(sys.argv[2:])
+    from anime_watch.updater import check_for_updates
+    check_for_updates()
     from anime_watch.tui.app import run_app
     run_app()
     return 0

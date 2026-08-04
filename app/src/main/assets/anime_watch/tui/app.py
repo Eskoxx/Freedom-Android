@@ -107,6 +107,14 @@ class AnimeWatch(App):
             self._cleanup_webtorrent()
 
     def on_ready(self):
+        try:
+            from anime_watch.updater import pending_update_notice, clear_pending_notice
+            notice = pending_update_notice()
+            if notice:
+                self.notify(f"Freedom updated to v{notice} — restart to load new code.", title="Update applied", timeout=8)
+                clear_pending_notice()
+        except Exception:
+            pass
         self.push_screen(SplashScreen())
 
     def _cleanup_webtorrent(self):

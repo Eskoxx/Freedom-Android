@@ -271,6 +271,12 @@ class PlaybackHandler:
                 for sf in sub_files.values():
                     try: os.unlink(sf)
                     except Exception: pass
+                proxy = getattr(stream, 'proxy_server', None)
+                if proxy:
+                    try:
+                        proxy.shutdown()
+                    except Exception:
+                        pass
 
             _stage = "saving-history"
             entry = HistoryEntry(

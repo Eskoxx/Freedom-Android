@@ -51,12 +51,13 @@ def _pick_hls_variant(master_url: str, quality_pref: str) -> Optional[str]:
     return best_url or fallback_url
 
 
-PNG_WRAP_CDNS = {"mt.nekostream.site", "9hjkrt.nekostream.site", "vidtub.kotocdn.site", "megap.kotocdn.site"}
+class _ProxyHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
 
-
-class _ProxyHTTPServer(HTTPServer):
-    def __init__(self, playlist, referer, seg_map):
+    def __init__(self, playlist, variants, referer, seg_map):
         self._playlist = playlist
+        self._variants = variants
         self._referer = referer
         self._seg_map = seg_map
         super().__init__(("127.0.0.1", 0), _SegmentProxyHandler)
@@ -65,13 +66,19 @@ class _ProxyHTTPServer(HTTPServer):
 class _SegmentProxyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         server = self.server
-        if self.path == "/playlist.m3u8":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/vnd.apple.mpegurl")
-            self.end_headers()
-            self.wfile.write(server._playlist.encode())
+        path = self.path.split("?")[0]
+        if path == "/playlist.m3u8":
+            self._serve_text(server._playlist)
             return
-        orig_url = server._seg_map.get(self.path)
+        if path.startswith("/v/"):
+            variant = server._variants.get(path)
+            if variant:
+                self._serve_text(variant)
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
+        orig_url = server._seg_map.get(path)
         if not orig_url:
             self.send_response(404)
             self.end_headers()
@@ -106,8 +113,35 @@ class _SegmentProxyHandler(BaseHTTPRequestHandler):
             self.send_response(502)
             self.end_headers()
 
+    def _serve_text(self, content: str):
+        data = content.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
     def log_message(self, *a):
         pass
+
+
+def _rewrite_media_playlist(body: str, playlist_url: str, seg_map: dict, idx: list) -> str:
+    new_lines = []
+    base = playlist_url.rsplit("/", 1)[0]
+    for line in body.splitlines():
+        if line.startswith("#") or not line.strip():
+            new_lines.append(line)
+            continue
+        if "://" in line:
+            orig = line
+        else:
+            orig = f"{base}/{line.lstrip('/')}"
+        path = f"/seg/{idx[0]}"
+        idx[0] += 1
+        seg_map[path] = orig
+        new_lines.append(path)
+    return "\n".join(new_lines)
 
 
 def _proxy_hls(playlist_url: str, referer: str, cdn_domain: str) -> tuple[str, HTTPServer]:
@@ -119,24 +153,46 @@ def _proxy_hls(playlist_url: str, referer: str, cdn_domain: str) -> tuple[str, H
     if resp.status_code != 200:
         return playlist_url, None
     body = resp.text
-    seg_map = {}
-    idx = 0
-    new_lines = []
-    for line in body.splitlines():
-        if line.startswith("#") or not line.strip():
-            new_lines.append(line)
-            continue
-        if "://" in line:
-            orig = line
-        else:
-            base = playlist_url.rsplit("/", 1)[0]
-            orig = f"{base}/{line.lstrip('/')}"
-        path = f"/seg/{idx}"
-        seg_map[path] = orig
-        new_lines.append(path)
-        idx += 1
 
-    server = _ProxyHTTPServer("\n".join(new_lines), referer, seg_map)
+    seg_map = {}
+    idx = [0]
+    if "#EXT-X-STREAM-INF:" in body:
+        variants = {}
+        lines = body.splitlines()
+        new_lines = []
+        base = playlist_url.rsplit("/", 1)[0]
+        for i, line in enumerate(lines):
+            if line.startswith("#EXT-X-STREAM-INF:"):
+                next_line = ""
+                for j in range(i + 1, len(lines)):
+                    if lines[j].strip() and not lines[j].startswith("#"):
+                        next_line = lines[j].strip()
+                        break
+                if next_line:
+                    v_url = next_line if "://" in next_line else f"{base}/{next_line.lstrip('/')}"
+                    try:
+                        v_resp = SESSION.get(v_url, headers={"Referer": referer}, timeout=SCRAPE_TIMEOUT)
+                        if v_resp.status_code == 200:
+                            v_path = f"/v/{len(variants)}"
+                            v_rewritten = _rewrite_media_playlist(v_resp.text, v_url, seg_map, idx)
+                            variants[v_path] = v_rewritten
+                            new_lines.append(line)
+                            new_lines.append(v_path)
+                            continue
+                    except requests.RequestException:
+                        pass
+            new_lines.append(line)
+        if not variants:
+            return playlist_url, None
+        rewritten = "\n".join(new_lines)
+    else:
+        variants = {}
+        rewritten = _rewrite_media_playlist(body, playlist_url, seg_map, idx)
+
+    if idx[0] == 0:
+        return playlist_url, None
+
+    server = _ProxyHTTPServer(rewritten, variants, referer, seg_map)
     port = server.server_address[1]
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
@@ -424,11 +480,9 @@ class AnikotoProvider(BaseProvider):
                     m3u8_url = best_variant
 
             proxy_server = None
-            parsed_m3u8 = urlparse(m3u8_url)
-            if parsed_m3u8.netloc in PNG_WRAP_CDNS or parsed_m3u8.netloc.endswith('.nekostream.site'):
-                proxy_url, proxy_server = _proxy_hls(m3u8_url, "https://megaplay.buzz/", parsed_m3u8.netloc)
-                if proxy_url:
-                    m3u8_url = proxy_url
+            proxy_url, proxy_server = _proxy_hls(m3u8_url, "https://megaplay.buzz/", urlparse(m3u8_url).netloc)
+            if proxy_url:
+                m3u8_url = proxy_url
 
             subtitles = [
                 {"url": t["file"], "label": t.get("label", ""), "lang": t.get("label", "").lower()}
