@@ -4,7 +4,8 @@ sys.path.insert(0, os.path.dirname(__file__) + "/..")
 def _progress_bar(done: int, total: int, width: int = 18) -> str:
     frac = done / total if total else 0.0
     filled = int(width * frac)
-    return "[" + "#" * filled + "-" * (width - filled) + f"] {done}/{total}"
+    pct = int(frac * 100)
+    return "[" + "#" * filled + "-" * (width - filled) + f"] {pct:>3}%  {done}/{total}"
 
 def _check_updates_terminal() -> None:
     from anime_watch.updater import (
