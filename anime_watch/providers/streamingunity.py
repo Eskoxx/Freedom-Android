@@ -37,8 +37,8 @@ class _ManifestServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         super().__init__(("127.0.0.1", 0), _ManifestHandler)
 
 
-BASE = "https://streamingunity.dog"
-CDN = "https://cdn.streamingunity.dog"
+BASE = "https://streamingunity.vip"
+CDN = "https://cdn.streamingunity.vip"
 IFRAME_BASE = f"{BASE}/en/iframe"
 SEARCH_URL = f"{BASE}/en/search"
 TITLE_URL = f"{BASE}/en/titles"
@@ -562,7 +562,7 @@ def _make_proxied_stream(master_url: str, referer: str, selected: Optional[str] 
 class StreamingUnityProvider(BaseProvider):
     name = "StreamingUnity"
     slug = "streamingunity"
-    url = "https://streamingunity.dog"
+    url = "https://streamingunity.vip"
     category = "movies"
 
     def search(self, query: str) -> list[SearchResult]:
