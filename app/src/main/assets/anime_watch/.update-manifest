@@ -31,7 +31,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  app/src/main/a
 39e52e61fbe95fa13fa689625004bd419aa42ecc81a93031fa41706787dd474c  app/src/main/assets/anime_watch/tui/app.py
 79daa20191749ec784d647e7e0879fbba72716078b2bb0ee7642932a5335573b  app/src/main/assets/anime_watch/tui/downloader.py
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  app/src/main/assets/anime_watch/tui/__init__.py
-b7e79780bf66360dcc99acc9e016ba45db4ffced9c2ef15568467e4686425db0  app/src/main/assets/anime_watch/tui/player.py
+6c15d64161189a5f7bf728f42a4b9cda680bbd461e12f0fef278ff0368d8433a  app/src/main/assets/anime_watch/tui/player.py
 278f8abd75c2889599af26ca394459a0ea866ffb193c3f3f0d887c91132fa0e0  app/src/main/assets/anime_watch/tui/screens.py
 d00a9695bf2234894bcdea75afb016583e5c5677590af492ab2ed0f04d0470bb  app/src/main/assets/anime_watch/tui/widgets.py
 351e0bf6658fbe0d45f9f2a7786ee966aec316b4b3e937555ffe2919c67c6c07  app/src/main/assets/anime_watch/updater.py

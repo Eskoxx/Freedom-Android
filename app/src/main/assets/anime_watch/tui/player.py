@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import socket
 import shutil
 import subprocess
@@ -9,9 +10,85 @@ import tempfile
 import time
 from dataclasses import asdict
 from typing import Optional
+from urllib.parse import urlparse
 import requests
 from anime_watch.models import Episode, StreamSource
 from anime_watch.history import HistoryEntry, add_entry as add_history_entry
+
+
+def _ass_time_to_srt(t: str) -> str:
+    """0:00:01.00 -> 00:00:01,000"""
+    try:
+        if t.count(":") == 1:
+            t = "0:" + t
+        hh, mm, ss_cc = t.split(":")
+        ss, cc = ss_cc.split(".")
+        cc = (cc + "00")[:2]
+        return f"{hh.zfill(2)}:{mm.zfill(2)}:{ss.zfill(2)},{int(cc) * 10:03d}"
+    except Exception:
+        return "00:00:00,000"
+
+
+def _ass_to_srt(content: str) -> str:
+    """Convert ASS (Advanced SubStation Alpha) content to plain SRT."""
+    out = []
+    idx = 1
+    in_events = False
+    fields = None
+    for line in content.splitlines():
+        s = line.strip()
+        low = s.lower()
+        if low.startswith("[events]"):
+            in_events = True
+            continue
+        if not in_events:
+            continue
+        if low.startswith("format:"):
+            fields = [f.strip() for f in s[len("format:"):].split(",")]
+            continue
+        if not s.startswith("Dialogue:"):
+            continue
+        if fields is None:
+            fields = ["Layer", "Start", "End", "Style", "Name",
+                      "MarginL", "MarginR", "MarginV", "Effect", "Text"]
+        parts = s[len("Dialogue:"):].split(",", len(fields) - 1)
+        parts = [p.strip() for p in parts]
+        while len(parts) < len(fields):
+            parts.append("")
+        try:
+            si = fields.index("Start")
+            ei = fields.index("End")
+            ti = fields.index("Text")
+        except ValueError:
+            continue
+        text = parts[ti] if ti < len(parts) else ""
+        text = re.sub(r"\{[^}]*\}", "", text)
+        text = text.replace("\\N", "\n").replace("\\n", "\n").replace("\\h", " ")
+        text = re.sub(r"<[^>]+>", "", text)
+        text = re.sub(r"\n{2,}", "\n", text)
+        text = text.strip()
+        if not text:
+            continue
+        out.append(f"{idx}\n{_ass_time_to_srt(parts[si] if si < len(parts) else '')} --> "
+                   f"{_ass_time_to_srt(parts[ei] if ei < len(parts) else '')}\n{text}\n")
+        idx += 1
+    return "\n".join(out).strip()
+
+
+def _sub_ext_and_content(url: str, data: bytes) -> tuple[str, bytes]:
+    """Normalize a downloaded subtitle to something the Android renderer can
+    parse (SRT/VTT). ASS content is converted to SRT in Python since the
+    in-app renderer only understands SRT/VTT."""
+    path = urlparse(url).path.lower()
+    head = data[:4096].lstrip().lower()
+    if path.endswith(".ass") or head.startswith(b"[script info]") or b"[events]" in head:
+        try:
+            return ".srt", _ass_to_srt(data.decode("utf-8", "replace")).encode("utf-8")
+        except Exception:
+            pass
+    if path.endswith(".vtt") or head.startswith(b"webvtt"):
+        return ".vtt", data
+    return ".srt", data
 
 _ANDROID_CACHE = "/data/data/io.freedom/cache"
 _ANDROID = os.environ.get("ANDROID_ROOT") is not None
@@ -178,15 +255,20 @@ class PlaybackHandler:
                     if not _url:
                         continue
                     if os.path.exists(_url):
-                        sub_files[lang] = _url
+                        with open(_url, "rb") as _lf:
+                            _ext, _data = _sub_ext_and_content(_url, _lf.read())
+                        _tmp = tempfile.NamedTemporaryFile(suffix=_ext, delete=False, prefix="aw-sub-")
+                        _tmp.write(_data)
+                        _tmp.close()
+                        sub_files[lang] = _tmp.name
                     else:
                         async def _dl(lang=lang, url=_url, headers=sub_headers):
                             try:
                                 resp = await asyncio.to_thread(requests.get, url, headers=headers, timeout=10)
                                 if resp.status_code == 200:
-                                    ext = ".vtt" if url.endswith(".vtt") else ".srt"
+                                    ext, data = _sub_ext_and_content(url, resp.content)
                                     tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False, prefix="aw-sub-")
-                                    tmp.write(resp.content)
+                                    tmp.write(data)
                                     tmp.close()
                                     sub_files[lang] = tmp.name
                             except Exception:
