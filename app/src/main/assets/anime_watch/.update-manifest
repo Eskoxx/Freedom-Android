@@ -1,4 +1,4 @@
-893560d693dfb6e4004a331e9a9dcf66191babd7df46ca84f8860560cc049620  app/src/main/assets/anime_watch/core.py
+ab4b6a5ebcb9b9ce6acfb3ff162597f540eb68637632e5f9744ce81b5dc8f0f0  app/src/main/assets/anime_watch/core.py
 c6211cfc2dd757c79c603f176565f9d46f68fd51abd852d95e59fd6e731a0a83  app/src/main/assets/anime_watch/history.py
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  app/src/main/assets/anime_watch/__init__.py
 1204e7076b484a4d2274433c02ffa34182f2213742af8fdcf31c90aff65ccdb2  app/src/main/assets/anime_watch/__main__.py
@@ -12,10 +12,12 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  app/src/main/a
 6d5e91ebee8e9ffee8298ffdd705663bc5920aadd7e95fc2da84b9650e9d931e  app/src/main/assets/anime_watch/plugin/validate.py
 fa95aeaf5d9117bf8835508415e0e97189953832e7e89008a89867bf1603c708  app/src/main/assets/anime_watch/providers/anidb.py
 133fbcd00052c506a6a8a95f404400d1cc2fbfc974783213d8fd326abece6159  app/src/main/assets/anime_watch/providers/anikoto.py
+889a972bbb17253cc2362ae29efbc0fadae05ccff69df4bd874a998d74bbe430  app/src/main/assets/anime_watch/providers/anineko.py
+7f5da317b4bddcf908d9751265bc335a8193f129f1e6a3f9dfa5cb449b65d0bc  app/src/main/assets/anime_watch/providers/anizone.py
 b957abc371a7763f67f670f8bfcd3c554a68db29dba6fca02d7b37c58bf69f76  app/src/main/assets/anime_watch/providers/base.py
 b8bcafc7427cfd3aa8152506584863add8dc3c7396176cbf00e574599a2a2808  app/src/main/assets/anime_watch/providers/bingr.py
 c31577fdd997679bcc382bec5d7f057246348fc6cdf304c3aadc1a89bd2faa02  app/src/main/assets/anime_watch/providers/fmovies.py
-6e22c297f0eda8eef1232b2380240724f628c3d9988672d4b84dd21b3ace3d69  app/src/main/assets/anime_watch/providers/__init__.py
+0f5a2847a589cc49c3786fcdee36affec429d4f18344031a69eded2f757ea427  app/src/main/assets/anime_watch/providers/__init__.py
 e38ce7e0876f064e8d49b094c5096541c74ac42f3555fd48adb5c7414b2805f0  app/src/main/assets/anime_watch/providers/loader.py
 3fa366c48deeff44698e7b92a5bd1ecf90aaa67d81ba8f7478061f5f3e1056e7  app/src/main/assets/anime_watch/providers/moviebox.py
 1ddb826e7c3f5f4173ff284eb7b48fee62f1e90a3904f0493f2e20f65e2a5d07  app/src/main/assets/anime_watch/providers/netmirror.py

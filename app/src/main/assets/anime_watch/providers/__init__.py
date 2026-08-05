@@ -4,12 +4,14 @@ import re
 from typing import Optional
 from anime_watch.models import Site, SearchResult, Episode, StreamSource, TorrentResult
 from anime_watch.core import (
-    fetch_episodes_animepahe, fetch_episodes_generic,
+    fetch_episodes_generic,
     scrape_page_for_video, extract_with_ytdlp
 )
 from .anidb import AniDBProvider
 from .anikoto import AnikotoProvider
 from .tryembed import TryEmbedProvider
+from .anineko import AniNekoProvider
+from .anizone import AniZoneProvider
 from .bingr import BingrProvider
 from .fmovies import FmoviesProvider
 from .netmirror import NetMirrorProvider
@@ -25,11 +27,15 @@ ANIME_SITES = [
     Site(name="AniDB", slug="anidb", url="https://anidb.app", rank=1, category="anime"),
     Site(name="Anikoto", slug="anikoto", url="https://anikototv.to", rank=2, category="anime"),
     Site(name="TryEmbed", slug="tryembed", url="https://tryembed.us.cc", rank=3, category="anime"),
+    Site(name="AniNeko", slug="anineko", url="https://anineko.to", rank=4, category="anime"),
+    Site(name="AniZone", slug="anizone", url="https://anizone.to", rank=5, category="anime"),
 ]
 ANIME_PROVIDERS = {
     "anidb": AniDBProvider(),
     "anikoto": AnikotoProvider(),
     "tryembed": TryEmbedProvider(),
+    "anineko": AniNekoProvider(),
+    "anizone": AniZoneProvider(),
 }
 
 MOVIE_SITES: list[Site] = [
@@ -252,11 +258,7 @@ def get_episodes(result: SearchResult) -> list[Episode]:
         if em:
             eps = [Episode(title=f"{result.title} - Episode {em.group(1)}", url=result.url, number=em.group(1), site_name=result.site_name, anime_name=an)]
         else:
-            url_lower = result.url.lower()
-            if "animepahe" in url_lower:
-                eps = fetch_episodes_animepahe(result.url, result.url.rsplit("/anime", 1)[0])
-            else:
-                eps = fetch_episodes_generic(result.url, result.site_name)
+            eps = fetch_episodes_generic(result.url, result.site_name)
             if not eps:
                 eps = [Episode(title=f"{result.title} - Play Now", url=result.url, number="1", site_name=result.site_name, anime_name=an)]
             for e in eps:

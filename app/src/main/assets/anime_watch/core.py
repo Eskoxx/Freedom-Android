@@ -23,20 +23,6 @@ SCRAPE_TIMEOUT = 8
 def _which(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
-def fetch_episodes_animepahe(anime_url: str, site_url: str = "https://animepahe.ru") -> list[Episode]:
-    episodes = []
-    try:
-        m = re.search(r"/anime/(\d+)", anime_url)
-        if not m: return episodes
-        resp = SESSION.get(f"{site_url}/api", params={"m": "release", "id": m.group(1), "sort": "episode_asc", "page": 1}, timeout=SCRAPE_TIMEOUT)
-        if resp.status_code == 200:
-            for ep in resp.json().get("data", []):
-                en = ep.get("episode", 0)
-                episodes.append(Episode(title=f"Episode {en} - {ep.get('title', '')}", url=f"{site_url}/play/{m.group(1)}/{ep.get('session', '')}", number=str(en), site_name="AnimePahe"))
-    except (requests.RequestException, json.JSONDecodeError):
-        pass
-    return episodes
-
 def fetch_episodes_generic(anime_url: str, site_name: str) -> list[Episode]:
     episodes = []
     try:
