@@ -111,7 +111,7 @@ class AnimeWatch(App):
             from anime_watch.updater import pending_update_notice, clear_pending_notice
             notice = pending_update_notice()
             if notice:
-                self.notify(f"Freedom updated to v{notice} — restart to load new code.", title="Update applied", timeout=8)
+                self.notify(f"Freedom updated to v{notice}.", title="Update applied", timeout=8)
                 clear_pending_notice()
         except Exception:
             pass

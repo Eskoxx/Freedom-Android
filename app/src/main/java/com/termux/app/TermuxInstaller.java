@@ -27,6 +27,7 @@ import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -36,6 +37,7 @@ import java.net.URL;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -466,6 +468,12 @@ final class TermuxInstaller {
     private static final String FREEDOM_RAW_BASE =
         "https://raw.githubusercontent.com/Eskoxx/Freedom-Android/main/anime_watch/";
 
+    /** True while the first-run bootstrap is downloading the package, so the
+     *  background safety-net never double-downloads. */
+    private static final AtomicBoolean FREEDOM_SETUP_RUNNING = new AtomicBoolean(false);
+    /** Only one downloader may run at a time. */
+    private static final AtomicBoolean FREEDOM_DOWNLOAD_RUNNING = new AtomicBoolean(false);
+
     /** Fetch the whole {@code anime_watch} package from GitHub when it is missing.
      *  Only acts as a safety net for existing installs; the first-run download
      *  happens synchronously inside {@link #setupFreedomAssets}. */
@@ -475,6 +483,7 @@ final class TermuxInstaller {
                 // On a fresh install the prefix is absent and setupFreedomAssets()
                 // does the download; skip to avoid double-downloading.
                 if (!FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)) return;
+                if (FREEDOM_SETUP_RUNNING.get()) return;
                 File watchDir = new File(TERMUX_HOME_DIR, "anime_watch");
                 if (!new File(watchDir, ".update-version").exists()) {
                     downloadFreedomPackage(watchDir);
@@ -514,6 +523,20 @@ final class TermuxInstaller {
         }
     }
 
+    private static String sha256HexFile(File file) {
+        try (InputStream in = new FileInputStream(file)) {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) md.update(buf, 0, n);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : md.digest()) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private static void writeMarker(File file, String content) throws Exception {
         if (file.getParentFile() != null) file.getParentFile().mkdirs();
         try (FileOutputStream out = new FileOutputStream(file)) {
@@ -522,40 +545,48 @@ final class TermuxInstaller {
     }
 
     /** Download the anime_watch package (manifest + all files, sha256-verified)
-     *  into {@code $HOME/anime_watch}. */
+     *  into {@code $HOME/anime_watch}. Single-flight: if another downloader is
+     *  already running, this call returns immediately. */
     private static void downloadFreedomPackage(File watchDir) throws Exception {
-        Logger.logInfo(LOG_TAG, "Downloading Freedom anime_watch package from GitHub.");
-        watchDir.mkdirs();
-        byte[] manifestBytes = fetchUrl(FREEDOM_RAW_BASE + ".update-manifest", 30000);
-        String manifest = new String(manifestBytes, "UTF-8");
-        for (String line : manifest.split("\n")) {
-            line = line.trim();
-            if (line.isEmpty() || !line.contains("  ")) continue;
-            String[] parts = line.split("  ", 2);
-            if (parts.length != 2) continue;
-            String digest = parts[0].trim();
-            String rel = parts[1].trim();
-            int idx = rel.indexOf("anime_watch/");
-            if (idx >= 0) rel = rel.substring(idx + "anime_watch/".length());
-            byte[] data = fetchUrl(FREEDOM_RAW_BASE + rel, 30000);
-            if (!sha256Hex(data).equals(digest)) {
-                Logger.logError(LOG_TAG, "Hash mismatch for " + rel + ", skipping");
-                continue;
+        if (!FREEDOM_DOWNLOAD_RUNNING.compareAndSet(false, true)) return;
+        try {
+            Logger.logInfo(LOG_TAG, "Downloading Freedom anime_watch package from GitHub.");
+            watchDir.mkdirs();
+            byte[] manifestBytes = fetchUrl(FREEDOM_RAW_BASE + ".update-manifest", 30000);
+            String manifest = new String(manifestBytes, "UTF-8");
+            for (String line : manifest.split("\n")) {
+                line = line.trim();
+                if (line.isEmpty() || !line.contains("  ")) continue;
+                String[] parts = line.split("  ", 2);
+                if (parts.length != 2) continue;
+                String digest = parts[0].trim();
+                String rel = parts[1].trim();
+                int idx = rel.indexOf("anime_watch/");
+                if (idx >= 0) rel = rel.substring(idx + "anime_watch/".length());
+                File dest = new File(watchDir, rel);
+                if (dest.exists() && sha256HexFile(dest).equals(digest)) continue;
+                byte[] data = fetchUrl(FREEDOM_RAW_BASE + rel, 30000);
+                if (!sha256Hex(data).equals(digest)) {
+                    Logger.logError(LOG_TAG, "Hash mismatch for " + rel + ", skipping");
+                    continue;
+                }
+                if (dest.getParentFile() != null) dest.getParentFile().mkdirs();
+                // Unique tmp name so concurrent writers never collide.
+                File tmp = new File(dest.getAbsolutePath() + ".tmp" + Thread.currentThread().getId());
+                try (FileOutputStream out = new FileOutputStream(tmp)) {
+                    out.write(data);
+                }
+                if (!tmp.renameTo(dest)) {
+                    Logger.logError(LOG_TAG, "Failed to move " + rel);
+                }
             }
-            File dest = new File(watchDir, rel);
-            if (dest.getParentFile() != null) dest.getParentFile().mkdirs();
-            File tmp = new File(dest.getAbsolutePath() + ".tmp");
-            try (FileOutputStream out = new FileOutputStream(tmp)) {
-                out.write(data);
-            }
-            if (!tmp.renameTo(dest)) {
-                Logger.logError(LOG_TAG, "Failed to move " + rel);
-            }
+            writeMarker(new File(watchDir, ".update-manifest"), manifest);
+            byte[] versionBytes = fetchUrl(FREEDOM_RAW_BASE + ".update-version", 30000);
+            writeMarker(new File(watchDir, ".update-version"), new String(versionBytes, "UTF-8").trim() + "\n");
+            Logger.logInfo(LOG_TAG, "Freedom anime_watch package downloaded.");
+        } finally {
+            FREEDOM_DOWNLOAD_RUNNING.set(false);
         }
-        writeMarker(new File(watchDir, ".update-manifest"), manifest);
-        byte[] versionBytes = fetchUrl(FREEDOM_RAW_BASE + ".update-version", 30000);
-        writeMarker(new File(watchDir, ".update-version"), new String(versionBytes, "UTF-8").trim() + "\n");
-        Logger.logInfo(LOG_TAG, "Freedom anime_watch package downloaded.");
     }
 
     static void copyWebtorrentBundle(Context context) {
@@ -621,7 +652,12 @@ final class TermuxInstaller {
             if (!homeDir.exists()) homeDir.mkdirs();
 
             File watchDir = new File(homeDir, "anime_watch");
-            downloadFreedomPackage(watchDir);
+            FREEDOM_SETUP_RUNNING.set(true);
+            try {
+                downloadFreedomPackage(watchDir);
+            } finally {
+                FREEDOM_SETUP_RUNNING.set(false);
+            }
             File debsDir = new File(homeDir, "debs");
             copyAssetDir(context, "debs", debsDir);
 

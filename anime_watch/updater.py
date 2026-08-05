@@ -132,6 +132,62 @@ def _apply_manifest(manifest: dict[str, str]) -> int:
     return changed
 
 
+def apply_update_sync(remote_text: str, timeout: float = 30.0, progress_cb=None) -> bool:
+    """Download + apply an update synchronously (two-phase, all-or-nothing).
+
+    Every file is downloaded and sha256-verified into memory before anything is
+    written, so a failure leaves the current install untouched. Returns True if
+    an update was applied. progress_cb(done, total, rel) fires per file.
+    """
+    try:
+        manifest = _fetch_manifest(timeout)
+    except Exception:
+        return False
+    if not manifest:
+        return False
+    entries = sorted(manifest.items())
+    total = len(entries)
+    staged: list[tuple[str, bytes]] = []
+    for i, (rel, digest) in enumerate(entries, start=1):
+        try:
+            data = _http_get(_raw_url(rel), timeout)
+        except Exception:
+            return False
+        if hashlib.sha256(data).hexdigest() != digest:
+            return False
+        staged.append((rel, data))
+        if progress_cb:
+            progress_cb(i, total, rel)
+
+    pkg = _pkg_dir()
+    for rel, data in staged:
+        dest = os.path.join(pkg, rel)
+        try:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            tmp = dest + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, dest)
+        except OSError:
+            return False
+
+    keep = set(manifest.keys()) | {".update-version", ".update-pending", ".update-manifest"}
+    for root, _dirs, files in os.walk(pkg):
+        if "__pycache__" in root:
+            continue
+        for fname in files:
+            full = os.path.join(root, fname)
+            rel = os.path.relpath(full, pkg)
+            if rel in keep:
+                continue
+            try:
+                os.unlink(full)
+            except OSError:
+                pass
+    _write_local_version(remote_text)
+    return True
+
+
 def _apply_update_async(remote_text: str) -> None:
     def run():
         try:
