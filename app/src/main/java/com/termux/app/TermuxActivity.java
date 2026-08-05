@@ -413,8 +413,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         final Intent intent = getIntent();
         setIntent(null);
 
-        // Keep anime_watch Python assets and webtorrent up to date (handles upgrades)
-        TermuxInstaller.updateFreedomAssets(TermuxActivity.this);
+        // Keep webtorrent up to date; anime_watch is downloaded from GitHub
+        // (first run via setupFreedomAssets, afterwards via the Python updater).
+        TermuxInstaller.updateFreedomAssets();
         TermuxInstaller.copyWebtorrentBundle(TermuxActivity.this);
 
         if (mTermuxService.isTermuxSessionsEmpty()) {

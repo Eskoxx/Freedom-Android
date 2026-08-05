@@ -112,7 +112,7 @@ fun VideoOverlay(
     var showSubtitlePosDialog by remember { mutableStateOf(false) }
     val subtitleVisible = subtitleFile != null || subtitleMode == "mpv"
 
-    var availableSubs by remember { mutableStateOf<List<String>>(emptyList()) }
+    var availableSubs by remember { mutableStateOf<List<MpvIpcServer.SubtitleTrackInfo>>(emptyList()) }
     LaunchedEffect(Unit) {
         MpvIpcServer.availableSubs.collect { subs ->
             availableSubs = subs
@@ -750,7 +750,7 @@ fun AudioTrackDialog2(
 
 @Composable
 fun SubtitleTrackDialog2(
-    availableSubs: List<String> = emptyList(),
+    availableSubs: List<MpvIpcServer.SubtitleTrackInfo> = emptyList(),
     mpvTracks: List<String> = emptyList(),
     mpvTrackIds: List<Int> = emptyList(),
     subtitlePosition: Float = 100f,
@@ -777,8 +777,8 @@ fun SubtitleTrackDialog2(
                 if (availableSubs.isNotEmpty()) {
                     HorizontalDivider(color = VTXT2.copy(alpha = 0.2f), modifier = Modifier.padding(horizontal = 8.dp))
                     Text("External", color = VTXT2, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
-                    availableSubs.forEach { lang ->
-                        RadioRow(icon = Icons.Default.Subtitles, label = lang, selected = false, onClick = { onSelectCustom(lang) })
+                    availableSubs.forEach { track ->
+                        RadioRow(icon = Icons.Default.Subtitles, label = track.label, selected = false, onClick = { onSelectCustom(track.id) })
                     }
                 }
                 if (mpvTracks.isNotEmpty()) {

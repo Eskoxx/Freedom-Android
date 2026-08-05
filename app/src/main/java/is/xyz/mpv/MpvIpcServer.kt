@@ -26,21 +26,24 @@ object MpvIpcServer {
     private var appContext: android.content.Context? = null
     private val clientSockets = mutableListOf<Socket>()
 
+    data class SubtitleTrackInfo(val id: String, val label: String, val lang: String)
+
     private val _subtitleFiles = mutableMapOf<String, String>()
-    private val _availableSubs = MutableStateFlow<List<String>>(emptyList())
-    val availableSubs: StateFlow<List<String>> = _availableSubs.asStateFlow()
+    private val _subtitleLabels = mutableMapOf<String, String>()
+    private val _availableSubs = MutableStateFlow<List<SubtitleTrackInfo>>(emptyList())
+    val availableSubs: StateFlow<List<SubtitleTrackInfo>> = _availableSubs.asStateFlow()
 
     private val _subtitlePath = MutableStateFlow<String?>(null)
     val subtitlePath: StateFlow<String?> = _subtitlePath.asStateFlow()
 
-    fun selectSubtitle(lang: String) {
-        Log.d(TAG, "selectSubtitle called lang=$lang files=${_subtitleFiles.keys}")
-        val path = _subtitleFiles[lang]
+    fun selectSubtitle(id: String) {
+        Log.d(TAG, "selectSubtitle called id=$id files=${_subtitleFiles.keys}")
+        val path = _subtitleFiles[id]
         if (path != null) {
             Log.d(TAG, "selectSubtitle: setting path=$path")
             _subtitlePath.value = path
         } else {
-            Log.w(TAG, "selectSubtitle: no path for lang=$lang")
+            Log.w(TAG, "selectSubtitle: no path for id=$id")
         }
     }
 
@@ -51,6 +54,7 @@ object MpvIpcServer {
 
     fun resetSubs() {
         _subtitleFiles.clear()
+        _subtitleLabels.clear()
         _availableSubs.value = emptyList()
         _subtitlePath.value = null
         resetAudio()
@@ -216,13 +220,21 @@ object MpvIpcServer {
                             val content = req.optString("content", "")
                             val ext = req.optString("ext", ".srt")
                             val lang = req.optString("lang", "und")
-                            Log.d(TAG, "set_subtitle_content: len=${content.length} ext=$ext lang=$lang")
+                            val label = req.optString("label", lang)
+                            Log.d(TAG, "set_subtitle_content: len=${content.length} ext=$ext lang=$lang label=$label")
                             if (content.isNotEmpty()) {
                                 val subFile = File(ctx.cacheDir, "subtitle_${lang}${ext}")
                                 subFile.writeText(content)
                                 Log.d(TAG, "Wrote subtitle to ${subFile.absolutePath} (exists=${subFile.exists()})")
                                 _subtitleFiles[lang] = subFile.absolutePath
-                                _availableSubs.value = _subtitleFiles.keys.toList()
+                                _subtitleLabels[lang] = label
+                                _availableSubs.value = _subtitleLabels.map { (id, lbl) ->
+                                    SubtitleTrackInfo(
+                                        id = id,
+                                        label = lbl,
+                                        lang = id.substringBeforeLast("-")
+                                    )
+                                }
                                 if (_subtitlePath.value == null) {
                                     _subtitlePath.value = subFile.absolutePath
                                 }

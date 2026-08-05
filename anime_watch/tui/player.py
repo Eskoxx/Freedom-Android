@@ -245,24 +245,30 @@ class PlaybackHandler:
             self._update_content(f"Now playing: {episode.title}\nClose mpv to return...")
 
             sub_files: dict[str, str] = {}
+            sub_labels: dict[str, str] = {}
             subtasks: list[asyncio.Task] = []
             subs = getattr(stream, 'subtitles', None)
             if subs:
                 sub_headers = getattr(stream, 'headers', None) or {}
+                sub_idx = 0
                 for sub in subs:
-                    lang = (sub.get("lang") or sub.get("label") or "und").lower()
                     _url = sub.get("url")
                     if not _url:
                         continue
+                    lang = (sub.get("lang") or sub.get("label") or "und").lower()
+                    uid = f"{lang}-{sub_idx}"
+                    sub_idx += 1
+                    label = sub.get("label") or lang
+                    sub_labels[uid] = label
                     if os.path.exists(_url):
                         with open(_url, "rb") as _lf:
                             _ext, _data = _sub_ext_and_content(_url, _lf.read())
                         _tmp = tempfile.NamedTemporaryFile(suffix=_ext, delete=False, prefix="aw-sub-")
                         _tmp.write(_data)
                         _tmp.close()
-                        sub_files[lang] = _tmp.name
+                        sub_files[uid] = _tmp.name
                     else:
-                        async def _dl(lang=lang, url=_url, headers=sub_headers):
+                        async def _dl(uid=uid, url=_url, headers=sub_headers, sf=sub_files):
                             try:
                                 resp = await asyncio.to_thread(requests.get, url, headers=headers, timeout=10)
                                 if resp.status_code == 200:
@@ -270,7 +276,7 @@ class PlaybackHandler:
                                     tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False, prefix="aw-sub-")
                                     tmp.write(data)
                                     tmp.close()
-                                    sub_files[lang] = tmp.name
+                                    sf[uid] = tmp.name
                             except Exception:
                                 pass
                         subtasks.append(asyncio.create_task(_dl()))
@@ -309,11 +315,11 @@ class PlaybackHandler:
                 ipc_ok = True
 
                 _stage = "ipc-set-subs"
-                for lang, sf in sub_files.items():
+                for uid, sf in sub_files.items():
                     ext = os.path.splitext(sf)[1] or ".srt"
                     try:
                         with open(sf, encoding="utf-8") as _sfh:
-                            await ipc.send_json({"cmd": "set_subtitle_content", "content": _sfh.read(), "ext": ext, "lang": lang})
+                            await ipc.send_json({"cmd": "set_subtitle_content", "content": _sfh.read(), "ext": ext, "lang": uid, "label": sub_labels.get(uid, uid)})
                     except Exception:
                         pass
 

@@ -25,11 +25,15 @@ import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipEntry;
@@ -459,24 +463,99 @@ final class TermuxInstaller {
         return -1;
     }
 
-    static void updateFreedomAssets(Context context) {
+    private static final String FREEDOM_RAW_BASE =
+        "https://raw.githubusercontent.com/Eskoxx/Freedom-Android/main/anime_watch/";
+
+    /** Fetch the whole {@code anime_watch} package from GitHub when it is missing.
+     *  Only acts as a safety net for existing installs; the first-run download
+     *  happens synchronously inside {@link #setupFreedomAssets}. */
+    static void updateFreedomAssets() {
         new Thread(() -> {
             try {
-                File homeDir = TERMUX_HOME_DIR;
-                File watchDir = new File(homeDir, "anime_watch");
-                copyAssetDir(context, "anime_watch", watchDir);
-                File setupSh = new File(homeDir, "setup_freedom.sh");
-                try (InputStream in = context.getAssets().open("setup_freedom.sh");
-                     OutputStream out = new FileOutputStream(setupSh)) {
-                    byte[] buf = new byte[4096];
-                    int len;
-                    while ((len = in.read(buf)) != -1) out.write(buf, 0, len);
+                // On a fresh install the prefix is absent and setupFreedomAssets()
+                // does the download; skip to avoid double-downloading.
+                if (!FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)) return;
+                File watchDir = new File(TERMUX_HOME_DIR, "anime_watch");
+                if (!new File(watchDir, ".update-version").exists()) {
+                    downloadFreedomPackage(watchDir);
                 }
-                Os.chmod(setupSh.getAbsolutePath(), 0700);
             } catch (Exception e) {
-                Logger.logError(LOG_TAG, "Failed to update Freedom assets: " + e.getMessage());
+                Logger.logError(LOG_TAG, "Failed to download Freedom assets: " + e.getMessage());
             }
         }).start();
+    }
+
+    private static byte[] fetchUrl(String url, int timeoutMs) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setInstanceFollowRedirects(true);
+        conn.setConnectTimeout(timeoutMs);
+        conn.setReadTimeout(timeoutMs);
+        conn.setRequestProperty("User-Agent", "Freedom/2.0 (+bootstrap)");
+        try (InputStream in = conn.getInputStream();
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+            return out.toByteArray();
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    private static String sha256Hex(byte[] data) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(data);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : d) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static void writeMarker(File file, String content) throws Exception {
+        if (file.getParentFile() != null) file.getParentFile().mkdirs();
+        try (FileOutputStream out = new FileOutputStream(file)) {
+            out.write(content.getBytes("UTF-8"));
+        }
+    }
+
+    /** Download the anime_watch package (manifest + all files, sha256-verified)
+     *  into {@code $HOME/anime_watch}. */
+    private static void downloadFreedomPackage(File watchDir) throws Exception {
+        Logger.logInfo(LOG_TAG, "Downloading Freedom anime_watch package from GitHub.");
+        watchDir.mkdirs();
+        byte[] manifestBytes = fetchUrl(FREEDOM_RAW_BASE + ".update-manifest", 30000);
+        String manifest = new String(manifestBytes, "UTF-8");
+        for (String line : manifest.split("\n")) {
+            line = line.trim();
+            if (line.isEmpty() || !line.contains("  ")) continue;
+            String[] parts = line.split("  ", 2);
+            if (parts.length != 2) continue;
+            String digest = parts[0].trim();
+            String rel = parts[1].trim();
+            int idx = rel.indexOf("anime_watch/");
+            if (idx >= 0) rel = rel.substring(idx + "anime_watch/".length());
+            byte[] data = fetchUrl(FREEDOM_RAW_BASE + rel, 30000);
+            if (!sha256Hex(data).equals(digest)) {
+                Logger.logError(LOG_TAG, "Hash mismatch for " + rel + ", skipping");
+                continue;
+            }
+            File dest = new File(watchDir, rel);
+            if (dest.getParentFile() != null) dest.getParentFile().mkdirs();
+            File tmp = new File(dest.getAbsolutePath() + ".tmp");
+            try (FileOutputStream out = new FileOutputStream(tmp)) {
+                out.write(data);
+            }
+            if (!tmp.renameTo(dest)) {
+                Logger.logError(LOG_TAG, "Failed to move " + rel);
+            }
+        }
+        writeMarker(new File(watchDir, ".update-manifest"), manifest);
+        byte[] versionBytes = fetchUrl(FREEDOM_RAW_BASE + ".update-version", 30000);
+        writeMarker(new File(watchDir, ".update-version"), new String(versionBytes, "UTF-8").trim() + "\n");
+        Logger.logInfo(LOG_TAG, "Freedom anime_watch package downloaded.");
     }
 
     static void copyWebtorrentBundle(Context context) {
@@ -542,7 +621,7 @@ final class TermuxInstaller {
             if (!homeDir.exists()) homeDir.mkdirs();
 
             File watchDir = new File(homeDir, "anime_watch");
-            copyAssetDir(context, "anime_watch", watchDir);
+            downloadFreedomPackage(watchDir);
             File debsDir = new File(homeDir, "debs");
             copyAssetDir(context, "debs", debsDir);
 

@@ -6,7 +6,7 @@ import urllib.request
 
 _DESKTOP_REPO = "Eskoxx/Freedom"
 _ANDROID_REPO = "Eskoxx/Freedom-Android"
-_ANDROID_ASSET_PREFIX = "app/src/main/assets/anime_watch"
+_ANDROID_ASSET_PREFIX = "anime_watch"
 _ANDROID_DATA_DIR = "/data/data/io.freedom"
 
 _UA = "Freedom/2.0 (+auto-update)"
