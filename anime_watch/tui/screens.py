@@ -17,6 +17,14 @@ from anime_watch.tui.downloader import DownloadHandler
 
 _request_log_ctx = threading.local()
 
+def _current_version() -> str:
+    p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".update-version")
+    try:
+        with open(p, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
 def _ensure_meta(torrent, dest):
     os.makedirs(dest, exist_ok=True)
     with open(os.path.join(dest, ".meta.json"), "w") as f:
@@ -85,6 +93,7 @@ class SplashScreen(Screen):
                     yield Static(" quit", classes="hint-text")
                 yield Static("", classes="spacer-sm")
                 yield Container(id="continue-watching", classes="continue-box")
+                yield Static(f"v{_current_version()}", classes="splash-hint-text")
 
     def on_mount(self):
         self._set_category(self.app.search_category)

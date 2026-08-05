@@ -185,6 +185,11 @@ def apply_update_sync(remote_text: str, timeout: float = 30.0, progress_cb=None)
             except OSError:
                 pass
     _write_local_version(remote_text)
+    try:
+        with open(os.path.join(pkg, ".update-pending"), "w", encoding="utf-8") as f:
+            f.write(remote_text.strip() + "\n")
+    except OSError:
+        pass
     return True
 
 
