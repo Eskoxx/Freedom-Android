@@ -14,7 +14,7 @@ Screen { background: #0d0b14; }
 .splash-center > LogoWidget { text-align: center; }
 .splash-center > .spacer { height: 2; }
 .splash-center > .spacer-sm { height: 1; }
-#splash-search { min-width: 60; width: 80w; max-width: 100; border: none; background: transparent; color: #a78bfa; }
+#splash-search { min-width: 60; width: 80w; max-width: 100; border: none; background: transparent; color: #a78bfa; margin-top: 2; }
 .splash-hints-row { width: 100%; height: 1; align: center middle; }
 .hint-text { width: auto; color: #6b6577; }
 .hint-key { width: auto; color: #b9a7e6; }

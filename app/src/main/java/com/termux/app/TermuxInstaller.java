@@ -468,6 +468,19 @@ final class TermuxInstaller {
     private static final String FREEDOM_RAW_BASE =
         "https://raw.githubusercontent.com/Eskoxx/Freedom-Android/main/anime_watch/";
 
+    /** Create ~/.hushlogin so login skips the Termux welcome MOTD on the
+     *  terminal home screen. Called synchronously before sessions are created. */
+    static void ensureHushlogin() {
+        try {
+            File hushlogin = new File(TERMUX_HOME_DIR, ".hushlogin");
+            if (!hushlogin.exists()) {
+                hushlogin.createNewFile();
+            }
+        } catch (Exception e) {
+            Logger.logError(LOG_TAG, "Failed to create .hushlogin: " + e.getMessage());
+        }
+    }
+
     /** True while the first-run bootstrap is downloading the package, so the
      *  background safety-net never double-downloads. */
     private static final AtomicBoolean FREEDOM_SETUP_RUNNING = new AtomicBoolean(false);
@@ -650,6 +663,7 @@ final class TermuxInstaller {
 
             File homeDir = TERMUX_HOME_DIR;
             if (!homeDir.exists()) homeDir.mkdirs();
+            ensureHushlogin();
 
             File watchDir = new File(homeDir, "anime_watch");
             FREEDOM_SETUP_RUNNING.set(true);

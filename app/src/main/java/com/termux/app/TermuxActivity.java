@@ -415,6 +415,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         // Keep webtorrent up to date; anime_watch is downloaded from GitHub
         // (first run via setupFreedomAssets, afterwards via the Python updater).
+        TermuxInstaller.ensureHushlogin();
         TermuxInstaller.updateFreedomAssets();
         TermuxInstaller.copyWebtorrentBundle(TermuxActivity.this);
 
