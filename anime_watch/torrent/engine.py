@@ -18,6 +18,17 @@ TMPDIR_PREFIX = "aw-torrent-"
 # Strip them before parsing the "Server running at:" URL, or mpv gets a garbage URL.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
+_DEBUG_PATH = "/data/data/io.freedom/cache/aw-torrent-debug.txt"
+
+def _dbg(msg: str) -> None:
+    if not _ANDROID:
+        return
+    try:
+        with open(_DEBUG_PATH, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
 class TorrentEngine:
     def __init__(self):
         self._processes: dict[str, asyncio.subprocess.Process] = {}
@@ -36,10 +47,19 @@ class TorrentEngine:
     ) -> None:
         """Tee webtorrent stdout to both mpv (pipe) and a file on disk."""
         if _ANDROID:
+            import threading as _threading
             dest_dir = os.path.dirname(save_path) or "."
-            url = self.download_to_dir_sync(magnet, info_hash, dest_dir, on_progress, track=False)
+            done_evt = _threading.Event()
+            url = self.download_to_dir_sync(
+                magnet, info_hash, dest_dir, on_progress, track=False,
+                on_done=done_evt.set,
+            )
             if url:
                 self._launch_android_player(url)
+                # Wait for the real download completion (100% progress or
+                # webtorrent exit) so the UI reports actual progress instead of
+                # declaring "Download complete" the moment the player launches.
+                done_evt.wait()
             return
 
         import os as _os
@@ -101,13 +121,15 @@ class TorrentEngine:
         _am_cmd = ["termux-am", "start"]
         if _shutil.which("termux-am") is None:
             _am_cmd = ["am", "start"]
+        _dbg(f"launching player with {_am_cmd[0]}: {url[:70]}")
         try:
             subprocess.check_call(_am_cmd + [
                 "-n", "io.freedom/is.xyz.mpv.VideoPlayerActivity",
                 "--es", "url", url,
             ])
-        except Exception:
-            pass
+            _dbg("player launch OK")
+        except Exception as e:
+            _dbg(f"player launch FAILED: {e}")
 
     async def stream_pipe(
         self,
@@ -229,18 +251,26 @@ class TorrentEngine:
         dest_dir: str,
         on_progress: Optional[callable] = None,
         track: bool = True,
+        on_done: Optional[callable] = None,
     ) -> Optional[str]:
         import subprocess as _subprocess
         import threading as _threading
         import time as _time
 
         os.makedirs(dest_dir, exist_ok=True)
+        _dbg(f"start hash={info_hash[:10]} dest={dest_dir}")
 
         proc = _subprocess.Popen(
-            ["webtorrent", "download", magnet, "--out", dest_dir],
+            # --keep-seeding: webtorrent-cli exits on download completion when
+            # nobody has connected to its HTTP server yet, killing the stream
+            # URL right before the player connects.
+            ["webtorrent", "download", magnet, "--out", dest_dir, "--keep-seeding"],
             stdout=_subprocess.PIPE,
             stderr=_subprocess.PIPE,
-            preexec_fn=os.setsid,
+            # Stay in the app's process group on Android so a force-stop/crash
+            # kills webtorrent too (setsid would orphan it and the download
+            # would keep running after the app is gone).
+            preexec_fn=os.setsid if not _ANDROID else None,
         )
         if track:
             self._processes[info_hash] = proc
@@ -262,6 +292,9 @@ class TorrentEngine:
                             base_url = candidate
             except ValueError:
                 pass
+            # stdout EOF = webtorrent exited; never wait forever for completion.
+            if on_done:
+                on_done()
 
         stdout_reader = _threading.Thread(target=_read_stdout, daemon=True)
         stdout_reader.start()
@@ -276,40 +309,67 @@ class TorrentEngine:
                         msg = self._parse_progress_sync(text)
                         if msg:
                             on_progress(msg)
+                            if on_done and msg.startswith("100%"):
+                                on_done()
             except ValueError:
                 pass
 
         stderr_reader = _threading.Thread(target=_read_stderr, daemon=True)
         stderr_reader.start()
 
+        # Wait for BOTH the server URL and at least one video file on disk.
+        # Metadata via DHT can be slow; give it up to 120s instead of failing
+        # after 30s and leaving webtorrent running with no player.
         waited = 0
-        while waited < 30 and base_url is None and not stop_event.is_set():
-            _time.sleep(0.5)
-            waited += 0.5
+        limit = 120
+        while waited < limit and (base_url is None or not self._find_video_files(dest_dir)) and not stop_event.is_set():
+            _time.sleep(1)
+            waited += 1
 
         if base_url is None:
             base_url = "http://localhost:8000/"
+        _dbg(f"base_url={base_url} after {waited:.0f}s")
 
-        file_url = self._construct_webtorrent_url(info_hash, dest_dir, base_url=base_url)
+        if base_url and "/webtorrent/" in base_url:
+            # webtorrent-cli prints the FULL stream URL ("Server running at:
+            # http://localhost:PORT/webtorrent/<hash>/<file>"), not a base.
+            file_url = base_url
+        else:
+            file_url = self._construct_webtorrent_url(info_hash, dest_dir, base_url=base_url)
         if not file_url:
+            _dbg("file_url=None (no video file found)")
             stop_event.set()
-            try:
-                proc.stdout.close()
-            except OSError:
-                pass
-            try:
-                proc.stderr.close()
-            except OSError:
-                pass
+            self._abort_proc(proc)
             return None
 
-        if not self._wait_until_serving(file_url, timeout=10):
+        if not self._wait_until_serving(file_url, timeout=15):
+            _dbg(f"serving timeout for {file_url}")
             file_url2 = self._construct_webtorrent_url(info_hash, dest_dir)
             if file_url2 and file_url2 != file_url and self._wait_until_serving(file_url2, timeout=5):
                 file_url = file_url2
             else:
+                _dbg("no alternate url either; aborting")
+                stop_event.set()
+                self._abort_proc(proc)
                 return None
+        _dbg(f"returning {file_url}")
         return file_url
+
+    @staticmethod
+    def _abort_proc(proc) -> None:
+        """Kill a webtorrent process and close its pipes after a give-up."""
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
+        try:
+            proc.stderr.close()
+        except OSError:
+            pass
 
     def _parse_progress_sync(self, text: str) -> Optional[str]:
         m = re.search(r'(\d+\.?\d*)\s*%', text)
