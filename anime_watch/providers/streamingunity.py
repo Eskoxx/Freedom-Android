@@ -109,7 +109,8 @@ def _build_master_url(embed_url: str) -> tuple[str, str] | None:
     qs_list = [("token", token), ("expires", expires)]
     lang = parse_qs(urlparse(embed_url).query).get("lang", ["en"])[0]
     qs_list.append(("lang", lang))
-    qs_list.append(("h", "1"))
+    if re.search(r'window\.canPlayFHD\s*=\s*true', html):
+        qs_list.append(("h", "1"))
     master_url = urlunparse((u.scheme, u.netloc, u.path, u.params, urlencode(qs_list), u.fragment))
     return master_url, embed_url
 
@@ -168,7 +169,7 @@ def _fetch_master(episode: Episode) -> Optional[dict]:
 
         master_url, vixcloud_embed_url = result
 
-        m3 = SESSION.get(master_url, headers=HEADERS, timeout=SCRAPE_TIMEOUT)
+        m3 = SESSION.get(master_url, headers={"Referer": vixcloud_embed_url, **HEADERS}, timeout=SCRAPE_TIMEOUT)
         if m3.status_code != 200:
             return None
 
