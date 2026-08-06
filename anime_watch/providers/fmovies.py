@@ -13,6 +13,7 @@ from urllib.parse import urljoin
 import requests
 
 from anime_watch.providers.base import BaseProvider
+from anime_watch.providers.hlsproxy import HlsProxy
 from anime_watch.models import Episode, SearchResult, StreamSource
 
 
@@ -149,9 +150,12 @@ def fetch_sources(media_id: int, media_type: str, title: str = "",
         "seed": seed,
     }
 
-    r = sess.get(f"{BASE}/{endpoint}/sources-with-title",
-                 params={k: v for k, v in params.items() if v}, timeout=20)
-    ct = r.text.strip()
+    try:
+        r = sess.get(f"{BASE}/{endpoint}/sources-with-title",
+                     params={k: v for k, v in params.items() if v}, timeout=20)
+        ct = r.text.strip()
+    except requests.exceptions.RequestException:
+        return None
 
     try:
         data = decrypt(seed, media_id, ct)
@@ -465,22 +469,32 @@ class FmoviesProvider(BaseProvider):
         if not target_url:
             return None
 
-        playlist_text = None
-        try:
-            resp = sess.get(target_url, headers=headers, timeout=15)
-            if resp.status_code == 200:
-                playlist_text = resp.text
-        except requests.RequestException:
-            pass
-
-        if playlist_text:
-            server = _PlaylistServer(playlist_text)
-            port = server.server_address[1]
-            t = threading.Thread(target=server.serve_forever, daemon=True)
-            t.start()
-            target_url = f"http://127.0.0.1:{port}/playlist.m3u8"
+        server = None
+        is_tv = data.get("media_type") == "tv"
+        if is_tv:
+            # TV shows: route through the shared HLS proxy (parallel segment
+            # prefetch + urgent pool) instead of letting mpv fetch segments
+            # sequentially on one throttled connection.
+            try:
+                proxy = HlsProxy(target_url, referer="https://www.fmovies.gd/", headers=headers)
+                target_url = proxy.master_url
+                server = proxy
+            except Exception:
+                server = None
         else:
-            server = None
+            playlist_text = None
+            try:
+                resp = sess.get(target_url, headers=headers, timeout=15)
+                if resp.status_code == 200:
+                    playlist_text = resp.text
+            except requests.RequestException:
+                pass
+            if playlist_text:
+                server = _PlaylistServer(playlist_text)
+                port = server.server_address[1]
+                t = threading.Thread(target=server.serve_forever, daemon=True)
+                t.start()
+                target_url = f"http://127.0.0.1:{port}/playlist.m3u8"
 
         subs = result.get("subtitles", [])
         sub_list = None

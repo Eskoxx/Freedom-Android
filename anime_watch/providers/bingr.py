@@ -7,6 +7,7 @@ import requests
 from anime_watch.models import SearchResult, Episode, StreamSource, MediaResult
 from anime_watch.core import SESSION, SCRAPE_TIMEOUT
 from .base import BaseProvider
+from .hlsproxy import HlsProxy
 
 API_BASE = "https://api.bingr.one/api"
 SERVERS = ["s11", "s12"]
@@ -167,6 +168,17 @@ class BingrProvider(BaseProvider):
             url = chosen["url"]
             stream_quality = chosen.get("quality", "unknown")
 
+            # TV shows: route through the shared HLS proxy (parallel segment
+            # prefetch + urgent pool) instead of mpv's single sequential
+            # connection, which the CDNs throttle hard on episode streams.
+            proxy = None
+            if media_type == "tv":
+                try:
+                    proxy = HlsProxy(url, referer="https://bingr.one/", headers=HEADERS)
+                    url = proxy.master_url
+                except Exception:
+                    proxy = None
+
             subs: list[dict] = []
             for s in body.get("subtitles", []):
                 u = s.get("url", "")
@@ -197,6 +209,7 @@ class BingrProvider(BaseProvider):
                 is_direct=True,
                 headers=HEADERS,
                 subtitles=subs or None,
+                proxy_server=proxy,
             )
         except (requests.RequestException, json.JSONDecodeError, KeyError):
             return None
