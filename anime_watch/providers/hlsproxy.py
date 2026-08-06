@@ -226,8 +226,29 @@ class HlsProxy:
             vid_routes[uri] = route
 
         rewritten = []
-        for line in lines:
-            if line.startswith("#EXT-X-MEDIA"):
+        i = 0
+        n = len(lines)
+        while i < n:
+            line = lines[i]
+            if line.startswith("#EXT-X-STREAM-INF"):
+                uri = None
+                j = i + 1
+                while j < n:
+                    nxt = lines[j].strip()
+                    if nxt and not nxt.startswith("#"):
+                        uri = nxt
+                        break
+                    j += 1
+                if uri is not None:
+                    key = uri if "://" in uri else urljoin(base, uri)
+                    route = vid_routes.get(key)
+                    if route is not None:
+                        rewritten.append(line)
+                        rewritten.append(route)
+                    i = j + 1
+                else:
+                    i += 1
+            elif line.startswith("#EXT-X-MEDIA"):
                 attrs = self._parse_attrs(line)
                 uri = attrs.get("URI", "")
                 key = uri if "://" in uri else urljoin(base, uri)
@@ -235,12 +256,12 @@ class HlsProxy:
                 if route:
                     line = line.replace(f'URI="{uri}"', f'URI="{route}"')
                 rewritten.append(line)
+                i += 1
             elif not line.startswith("#") and line.strip():
-                stripped = line.strip()
-                key = stripped if "://" in stripped else urljoin(base, stripped)
-                rewritten.append(vid_routes.get(key, line))
+                i += 1
             else:
                 rewritten.append(line)
+                i += 1
         self._routes["/master.m3u8"] = "\n".join(rewritten)
 
     def _start_server(self) -> "_HlsProxyServer":
@@ -339,6 +360,11 @@ class HlsProxy:
             audio_routes = [self._default_audio_route]
         for route in audio_routes:
             futs.append(self._pool.submit(lambda r=route: self._ensure_playlist(r)))
+        # Warm subtitle playlists too so the player registers all subtitle
+        # tracks early (otherwise they appear ~10s in and UIs miss them).
+        for gi, route in self._group_route.items():
+            if route.startswith("/s"):
+                futs.append(self._pool.submit(lambda r=route: self._ensure_playlist(r)))
         for f in futs:
             try:
                 f.result(timeout=30)
@@ -377,6 +403,12 @@ class HlsProxy:
                 f.result(timeout=30)
             except Exception:
                 pass
+        # Warm the first segment of every audio + subtitle group so the
+        # player's group probing is instant and all tracks register early
+        # (otherwise UIs that read the track list once miss them).
+        for gi, route in self._group_route.items():
+            if (route.startswith("/a") or route.startswith("/s")) and self._groups[gi]:
+                self._submit(self._groups[gi][0])
 
 
 class _HlsProxyServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
